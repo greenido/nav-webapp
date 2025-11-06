@@ -17,6 +17,10 @@ class TrailTrack {
         this.hasSetInitialLocation = false;
         this.db = null;
         this.routeSearchQuery = '';
+        this.selectedRouteId = null;
+        this.batterySaveMode = localStorage.getItem('batterySaveMode') === 'true';
+        this.gpsCheckInterval = parseInt(localStorage.getItem('gpsCheckInterval') || '5000', 10); // Default 5 seconds
+        this.gpsIntervalTimer = null;
         
         if (this.options.autoInit) {
             this.init();
@@ -25,8 +29,12 @@ class TrailTrack {
 
     async init() {
         await this.initDB();
-        await this.requestGeolocationPermission();
+        // Initialize map first so it's always visible, even if location fails
         this.initMap();
+        // Request location in parallel - don't block on it
+        this.requestGeolocationPermission().catch(() => {
+            // Silently handle any errors - map is already initialized
+        });
         await this.loadRoutes();
         this.initTheme();
         this.initEventListeners();
@@ -45,8 +53,19 @@ class TrailTrack {
             await new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(
                     (position) => {
+                        console.log('getCurrentPosition success:', position.coords);
                         // Successfully got position, store it
                         this.currentLocation = [position.coords.latitude, position.coords.longitude];
+                        // Update map view if map is already initialized
+                        if (this.map) {
+                            const latlng = L.latLng(position.coords.latitude, position.coords.longitude);
+                            this.createOrUpdateLocationMarker(latlng);
+                            if (!this.hasSetInitialLocation) {
+                                this.map.setView(latlng, 16);
+                                this.hasSetInitialLocation = true;
+                                console.log('Map view set to location from getCurrentPosition');
+                            }
+                        }
                         resolve(position);
                     },
                     (error) => {
@@ -108,6 +127,7 @@ class TrailTrack {
         });
 
         this.map.on('locationfound', (e) => {
+            console.log('Location found event:', e.latlng);
             // Store location as [lat, lng] array for consistency
             this.currentLocation = [e.latlng.lat, e.latlng.lng];
             this.createOrUpdateLocationMarker(e.latlng);
@@ -115,10 +135,12 @@ class TrailTrack {
             if (!this.hasSetInitialLocation) {
                 this.map.setView(e.latlng, 16);
                 this.hasSetInitialLocation = true;
+                console.log('Map view set to location');
             }
         });
 
         this.map.on('locationerror', (e) => {
+            console.error('Location error event:', e.message);
             // Only show error if we don't already have a location
             if (!this.currentLocation) {
                 this.showToast('Could not get your location. You can still use the app.', 'warning');
@@ -131,17 +153,20 @@ class TrailTrack {
         }
 
         // Try to get user's current location
+        console.log('Calling map.locate(), hasSetInitialLocation:', this.hasSetInitialLocation);
         this.map.locate({ 
             setView: !this.hasSetInitialLocation, 
             maxZoom: 16,
             enableHighAccuracy: false,
             timeout: 10000,
-            maximumAge: 60000
+            maximumAge: 60000,
+            watch: false
         });
     }
 
     createOrUpdateLocationMarker(latlng) {
         if (!this.map || !latlng) {
+            console.warn('createOrUpdateLocationMarker: map or latlng is missing', { map: this.map, latlng });
             return;
         }
 
@@ -159,9 +184,11 @@ class TrailTrack {
         }
 
         const leafletLatLng = L.latLng(latitude, longitude);
+        console.log('Creating/updating location marker at:', latitude, longitude);
 
         if (this.locationMarker) {
             this.locationMarker.setLatLng(leafletLatLng);
+            console.log('Location marker updated');
             return;
         }
 
@@ -169,7 +196,7 @@ class TrailTrack {
             icon: L.divIcon({
                 className: 'current-location-marker',
                 html: `
-                    <div style="position: relative;">
+                    <div style="position: relative; width: 20px; height: 20px;">
                         <div class="location-pulse" style="
                             position: absolute;
                             top: 50%;
@@ -189,6 +216,7 @@ class TrailTrack {
                             border: 3px solid white;
                             border-radius: 50%;
                             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                            z-index: 1000;
                         "></div>
                         <div style="
                             position: absolute;
@@ -199,13 +227,17 @@ class TrailTrack {
                             height: 8px;
                             background: white;
                             border-radius: 50%;
+                            z-index: 1001;
                         "></div>
                     </div>
                 `,
                 iconSize: [20, 20],
                 iconAnchor: [10, 10]
-            })
+            }),
+            zIndexOffset: 1000
         }).addTo(this.map);
+        
+        console.log('Location marker created and added to map');
     }
 
     // Initialize Theme
@@ -217,6 +249,67 @@ class TrailTrack {
             const isDark = document.documentElement.classList.toggle('dark');
             localStorage.setItem('theme', isDark ? 'dark' : 'light');
         });
+    }
+
+    // Toggle battery save mode
+    toggleBatterySaveMode() {
+        this.batterySaveMode = !this.batterySaveMode;
+        localStorage.setItem('batterySaveMode', this.batterySaveMode.toString());
+        
+        // Update UI
+        const batterySaveToggle = document.getElementById('battery-save-toggle');
+        if (batterySaveToggle) {
+            batterySaveToggle.checked = this.batterySaveMode;
+        }
+        
+        // Enable/disable interval input based on battery save mode
+        const intervalInput = document.getElementById('gps-interval-input');
+        if (intervalInput) {
+            intervalInput.disabled = !this.batterySaveMode;
+            if (!this.batterySaveMode) {
+                intervalInput.classList.add('opacity-50', 'cursor-not-allowed');
+            } else {
+                intervalInput.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }
+        
+        // If tracking is active, restart it with new mode
+        if (this.isTracking) {
+            this.stopTracking();
+            setTimeout(() => this.startTracking(), 100);
+        }
+        
+        this.showToast(
+            `Battery save mode ${this.batterySaveMode ? 'enabled' : 'disabled'}`,
+            'info'
+        );
+    }
+
+    // Update GPS check interval
+    updateGpsCheckInterval(intervalMs) {
+        const minInterval = 1000; // Minimum 1 second
+        const maxInterval = 60000; // Maximum 60 seconds
+        const clampedInterval = Math.max(minInterval, Math.min(maxInterval, intervalMs));
+        
+        this.gpsCheckInterval = clampedInterval;
+        localStorage.setItem('gpsCheckInterval', clampedInterval.toString());
+        
+        // Update UI
+        const intervalInput = document.getElementById('gps-interval-input');
+        if (intervalInput) {
+            intervalInput.value = clampedInterval / 1000; // Display in seconds
+        }
+        
+        // If tracking is active in battery save mode, restart it with new interval
+        if (this.isTracking && this.batterySaveMode) {
+            this.stopTracking();
+            setTimeout(() => this.startTracking(), 100);
+        }
+        
+        this.showToast(
+            `GPS check interval set to ${clampedInterval / 1000}s`,
+            'info'
+        );
     }
 
     // Initialize Event Listeners
@@ -309,12 +402,20 @@ class TrailTrack {
         });
 
         // Finish/Cancel route
-        document.getElementById('finish-route').addEventListener('click', () => {
+        document.getElementById('finish-route').addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent click from reaching the map
             this.finishRouteCreation();
         });
 
-        document.getElementById('cancel-route').addEventListener('click', () => {
+        document.getElementById('cancel-route').addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent click from reaching the map
             this.cancelRouteCreation();
+        });
+
+        // Undo point
+        document.getElementById('undo-point').addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent click from reaching the map
+            this.undoLastPoint();
         });
 
         // GPX Import
@@ -337,6 +438,29 @@ class TrailTrack {
             this.showToast('You are offline', 'warning');
             this.checkOnlineStatus();
         });
+
+        // Battery save mode toggle
+        const batterySaveToggle = document.getElementById('battery-save-toggle');
+        if (batterySaveToggle) {
+            batterySaveToggle.checked = this.batterySaveMode;
+            batterySaveToggle.addEventListener('change', () => {
+                this.toggleBatterySaveMode();
+            });
+        }
+
+        // GPS interval input
+        const gpsIntervalInput = document.getElementById('gps-interval-input');
+        if (gpsIntervalInput) {
+            gpsIntervalInput.value = this.gpsCheckInterval / 1000; // Display in seconds
+            gpsIntervalInput.disabled = !this.batterySaveMode;
+            if (!this.batterySaveMode) {
+                gpsIntervalInput.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+            gpsIntervalInput.addEventListener('change', (e) => {
+                const seconds = parseFloat(e.target.value) || 5;
+                this.updateGpsCheckInterval(seconds * 1000);
+            });
+        }
     }
 
     // Toggle GPS Tracking
@@ -358,53 +482,85 @@ class TrailTrack {
         document.getElementById('tracking-icon').classList.remove('text-gray-500');
         document.getElementById('tracking-icon').classList.add('text-green-600');
 
-        this.locationWatchId = navigator.geolocation.watchPosition(
-            (position) => {
-                // Store as [lat, lng] array for consistency
-                const latlngArray = [position.coords.latitude, position.coords.longitude];
-                const latlng = L.latLng(position.coords.latitude, position.coords.longitude);
-                this.currentLocation = latlngArray;
-                
-                this.createOrUpdateLocationMarker(latlng);
+        const handlePosition = (position) => {
+            // Store as [lat, lng] array for consistency
+            const latlngArray = [position.coords.latitude, position.coords.longitude];
+            const latlng = L.latLng(position.coords.latitude, position.coords.longitude);
+            this.currentLocation = latlngArray;
+            
+            this.createOrUpdateLocationMarker(latlng);
 
-                if (!this.hasSetInitialLocation) {
-                    this.map.setView(latlng, 16);
-                    this.hasSetInitialLocation = true;
-                }
-
-                // If drawing route, add point to current route
-                // Pass Leaflet LatLng object which has .lat and .lng properties
-                if (this.isDrawingRoute && this.currentRoute) {
-                    this.addPointToRoute(latlng);
-                }
-            },
-            (error) => {
-                let errorMsg = 'GPS error: ';
-                if (error.code === 1) {
-                    errorMsg += 'Permission denied';
-                } else if (error.code === 2) {
-                    errorMsg += 'Position unavailable';
-                } else if (error.code === 3) {
-                    errorMsg += 'Timeout';
-                } else {
-                    errorMsg += error.message;
-                }
-                this.showToast(errorMsg, 'error');
-            },
-            {
-                enableHighAccuracy: true,
-                maximumAge: 1000,
-                timeout: 10000
+            if (!this.hasSetInitialLocation) {
+                this.map.setView(latlng, 16);
+                this.hasSetInitialLocation = true;
             }
-        );
 
-        this.showToast('GPS tracking started', 'success');
+            // If drawing route, add point to current route
+            // Pass Leaflet LatLng object which has .lat and .lng properties
+            if (this.isDrawingRoute && this.currentRoute) {
+                this.addPointToRoute(latlng);
+            }
+        };
+
+        const handleError = (error) => {
+            let errorMsg = 'GPS error: ';
+            if (error.code === 1) {
+                errorMsg += 'Permission denied';
+            } else if (error.code === 2) {
+                errorMsg += 'Position unavailable';
+            } else if (error.code === 3) {
+                errorMsg += 'Timeout';
+            } else {
+                errorMsg += error.message;
+            }
+            this.showToast(errorMsg, 'error');
+        };
+
+        if (this.batterySaveMode) {
+            // Battery save mode: use getCurrentPosition with intervals
+            const checkPosition = () => {
+                if (!this.isTracking) return;
+                
+                navigator.geolocation.getCurrentPosition(
+                    handlePosition,
+                    handleError,
+                    {
+                        enableHighAccuracy: false, // Lower accuracy for battery saving
+                        maximumAge: this.gpsCheckInterval,
+                        timeout: 10000
+                    }
+                );
+            };
+
+            // Get initial position immediately
+            checkPosition();
+            
+            // Then check at intervals
+            this.gpsIntervalTimer = setInterval(checkPosition, this.gpsCheckInterval);
+            this.showToast(`GPS tracking started (battery save: ${this.gpsCheckInterval / 1000}s interval)`, 'success');
+        } else {
+            // Normal mode: use watchPosition for continuous tracking
+            this.locationWatchId = navigator.geolocation.watchPosition(
+                handlePosition,
+                handleError,
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 1000,
+                    timeout: 10000
+                }
+            );
+            this.showToast('GPS tracking started', 'success');
+        }
     }
 
     stopTracking() {
         if (this.locationWatchId !== null) {
             navigator.geolocation.clearWatch(this.locationWatchId);
             this.locationWatchId = null;
+        }
+        if (this.gpsIntervalTimer !== null) {
+            clearInterval(this.gpsIntervalTimer);
+            this.gpsIntervalTimer = null;
         }
         this.isTracking = false;
         document.getElementById('tracking-icon').classList.add('text-gray-500');
@@ -426,6 +582,31 @@ class TrailTrack {
         document.getElementById('route-controls').classList.remove('hidden');
         document.getElementById('sidebar').classList.add('sidebar-hidden');
         
+        // Initialize route name input
+        const routeNameInput = document.getElementById('route-name-input');
+        if (routeNameInput) {
+            routeNameInput.value = this.currentRoute.name;
+            // Clear default text when user clicks on the input
+            this.handleRouteNameClick = (e) => {
+                e.stopPropagation(); // Prevent click from reaching the map
+                if (e.target.value === 'New Route') {
+                    e.target.value = '';
+                }
+            };
+            routeNameInput.addEventListener('click', this.handleRouteNameClick);
+            // Also prevent focus/input events from propagating
+            routeNameInput.addEventListener('focus', (e) => {
+                e.stopPropagation();
+            });
+            // Update route name when input changes - store handler for cleanup
+            this.handleRouteNameInput = (e) => {
+                if (this.currentRoute) {
+                    this.currentRoute.name = e.target.value.trim() || 'New Route';
+                }
+            };
+            routeNameInput.addEventListener('input', this.handleRouteNameInput);
+        }
+        
         this.showToast('Click on map or enable GPS tracking to create route', 'info');
         
         // Add click handler to map
@@ -434,6 +615,9 @@ class TrailTrack {
                 this.addPointToRoute(e.latlng);
             }
         });
+        
+        // Update undo button state
+        this.updateUndoButtonState();
     }
 
     addPointToRoute(latlng) {
@@ -477,12 +661,66 @@ class TrailTrack {
             this.currentRoute.markers = [];
         }
         this.currentRoute.markers.push(marker);
+        
+        // Update undo button state
+        this.updateUndoButtonState();
+    }
+
+    undoLastPoint() {
+        if (!this.currentRoute || !this.isDrawingRoute || this.currentRoute.points.length === 0) {
+            return;
+        }
+
+        // Remove last point
+        this.currentRoute.points.pop();
+
+        // Remove last marker
+        if (this.currentRoute.markers && this.currentRoute.markers.length > 0) {
+            const lastMarker = this.currentRoute.markers.pop();
+            this.map.removeLayer(lastMarker);
+        }
+
+        // Update polyline
+        if (this.currentRoute.polyline) {
+            if (this.currentRoute.points.length === 0) {
+                // No points left, remove polyline
+                this.map.removeLayer(this.currentRoute.polyline);
+                this.currentRoute.polyline = null;
+            } else {
+                // Update polyline with remaining points using setLatLngs to avoid map panning
+                const latlngs = this.currentRoute.points.map(p => L.latLng(p[0], p[1]));
+                this.currentRoute.polyline.setLatLngs(latlngs);
+            }
+        }
+
+        // Update undo button state
+        this.updateUndoButtonState();
+        
+        this.showToast('Last point removed', 'info');
+    }
+
+    updateUndoButtonState() {
+        const undoButton = document.getElementById('undo-point');
+        if (undoButton) {
+            const canUndo = this.currentRoute && 
+                           this.isDrawingRoute && 
+                           this.currentRoute.points.length > 0;
+            undoButton.disabled = !canUndo;
+        }
     }
 
     async finishRouteCreation() {
         if (!this.currentRoute || this.currentRoute.points.length < 2) {
             this.showToast('Route needs at least 2 points', 'error');
             return;
+        }
+
+        // Update route name from input if it exists
+        const routeNameInput = document.getElementById('route-name-input');
+        if (routeNameInput && routeNameInput.value.trim()) {
+            this.currentRoute.name = routeNameInput.value.trim();
+        } else if (!this.currentRoute.name || this.currentRoute.name.trim() === '') {
+            this.currentRoute.name = 'New Route';
         }
 
         // Calculate route stats
@@ -494,15 +732,61 @@ class TrailTrack {
         
         // Add to routes list
         this.routes.push(this.currentRoute);
-        this.renderRoutesList();
         
-        this.cancelRouteCreation();
+        // Keep the polyline on the map - don't remove it
+        // Just clean up the drawing state
+        this.isDrawingRoute = false;
+        document.getElementById('route-controls').classList.add('hidden');
+        
+        // Remove route name input event listeners
+        if (routeNameInput) {
+            if (this.handleRouteNameInput) {
+                routeNameInput.removeEventListener('input', this.handleRouteNameInput);
+                this.handleRouteNameInput = null;
+            }
+            if (this.handleRouteNameClick) {
+                routeNameInput.removeEventListener('click', this.handleRouteNameClick);
+                this.handleRouteNameClick = null;
+            }
+        }
+        
+        if (this.handleMapClick) {
+            this.map.off('click', this.handleMapClick);
+        }
+        
+        // Remove waypoint markers but keep the polyline
+        if (this.currentRoute.markers) {
+            this.currentRoute.markers.forEach(m => this.map.removeLayer(m));
+            this.currentRoute.markers = null; // Clear markers array
+        }
+        
+        // Clear currentRoute but polyline stays on map
+        const savedRoute = this.currentRoute;
+        this.currentRoute = null;
+        
+        // Update undo button state
+        this.updateUndoButtonState();
+        
+        this.renderRoutesList();
         this.showToast('Route saved successfully', 'success');
     }
 
     cancelRouteCreation() {
         this.isDrawingRoute = false;
         document.getElementById('route-controls').classList.add('hidden');
+        
+        // Remove route name input event listeners
+        const routeNameInput = document.getElementById('route-name-input');
+        if (routeNameInput) {
+            if (this.handleRouteNameInput) {
+                routeNameInput.removeEventListener('input', this.handleRouteNameInput);
+                this.handleRouteNameInput = null;
+            }
+            if (this.handleRouteNameClick) {
+                routeNameInput.removeEventListener('click', this.handleRouteNameClick);
+                this.handleRouteNameClick = null;
+            }
+        }
         
         if (this.handleMapClick) {
             this.map.off('click', this.handleMapClick);
@@ -518,6 +802,9 @@ class TrailTrack {
             }
             this.currentRoute = null;
         }
+        
+        // Update undo button state
+        this.updateUndoButtonState();
     }
 
     // Calculate distance in meters
@@ -627,16 +914,33 @@ class TrailTrack {
     async loadRoutes() {
         this.routes = await this.db.getAll('routes');
         this.renderRoutesList();
-        this.routes.forEach(route => {
-            // Recreate polyline from saved points (routes are saved without polyline objects)
-            if (route.points && route.points.length > 0) {
-                route.polyline = L.polyline(route.points, {
-                    color: '#eab308', // Yellow color
-                    weight: 5,
-                    opacity: 0.9
-                }).addTo(this.map);
+        
+        // Show all routes on map by default (or selected route if one is selected)
+        if (this.selectedRouteId) {
+            const selectedRoute = this.routes.find(r => r.id === this.selectedRouteId);
+            if (selectedRoute) {
+                // Show only selected route
+                this.routes.forEach(route => {
+                    if (route.points && route.points.length > 0) {
+                        if (route.id === this.selectedRouteId) {
+                            route.polyline = L.polyline(route.points, {
+                                color: '#facc15', // Bright yellow for selected
+                                weight: 6,
+                                opacity: 1
+                            }).addTo(this.map);
+                        }
+                        // Don't add other routes to map when one is selected
+                    }
+                });
+            } else {
+                // Selected route not found, show all
+                this.selectedRouteId = null;
+                this.showAllRoutes();
             }
-        });
+        } else {
+            // Show all routes
+            this.showAllRoutes();
+        }
     }
 
     // Render routes list
@@ -660,12 +964,13 @@ class TrailTrack {
         }
 
         filteredRoutes.forEach(route => {
+            const isSelected = this.selectedRouteId === route.id;
             const routeEl = document.createElement('div');
-            routeEl.className = 'bg-gray-50 dark:bg-gray-700 p-3 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600';
+            routeEl.className = `bg-gray-50 dark:bg-gray-700 p-3 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 ${isSelected ? 'ring-2 ring-green-500 dark:ring-green-400' : ''}`;
             routeEl.innerHTML = `
                 <div class="flex items-start justify-between">
-                    <div class="flex-1">
-                        <h3 class="font-semibold dark:text-white">${route.name}</h3>
+                    <div class="flex-1" data-route-id="${route.id}">
+                        <h3 class="font-semibold dark:text-white">${route.name}${isSelected ? ' <span class="text-green-600 dark:text-green-400">(Selected)</span>' : ''}</h3>
                         <p class="text-sm text-gray-600 dark:text-gray-300">
                             ${(route.distance / 1000).toFixed(2)} km
                         </p>
@@ -674,7 +979,7 @@ class TrailTrack {
                         </p>
                     </div>
                     <div class="flex gap-1">
-                        <button class="route-view-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-500 rounded" data-id="${route.id}" title="View this route on the map" aria-label="View this route on the map">
+                        <button class="route-view-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-500 rounded ${isSelected ? 'bg-green-100 dark:bg-green-900' : ''}" data-id="${route.id}" title="${isSelected ? 'Deselect this route (show all)' : 'Show only this route on the map'}" aria-label="${isSelected ? 'Deselect this route' : 'Show only this route on the map'}">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
@@ -696,14 +1001,22 @@ class TrailTrack {
             list.appendChild(routeEl);
 
             // Add event listeners
-            routeEl.querySelector('.route-view-btn').addEventListener('click', () => {
+            routeEl.querySelector('.route-view-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
                 this.viewRoute(route.id);
             });
-            routeEl.querySelector('.route-export-btn').addEventListener('click', () => {
+            routeEl.querySelector('.route-export-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
                 this.exportGPX(route.id);
             });
-            routeEl.querySelector('.route-delete-btn').addEventListener('click', () => {
+            routeEl.querySelector('.route-delete-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
                 this.deleteRoute(route.id);
+            });
+            
+            // Make the route item clickable to select/deselect
+            routeEl.querySelector('[data-route-id]').addEventListener('click', () => {
+                this.viewRoute(route.id);
             });
         });
     }
@@ -720,46 +1033,165 @@ class TrailTrack {
         });
     }
 
-    // View route on map
+    // View route on map - toggle selection
     viewRoute(routeId) {
         const route = this.routes.find(r => r.id === routeId);
         if (!route) return;
 
-        // Remove existing route highlights
+        // If clicking the same route, deselect it (show all routes)
+        if (this.selectedRouteId === routeId) {
+            this.selectedRouteId = null;
+            this.showAllRoutes();
+            this.renderRoutesList();
+            return;
+        }
+
+        // Set selected route
+        this.selectedRouteId = routeId;
+
+        // Hide all routes first
         this.routes.forEach(r => {
             if (r.polyline) {
-                r.polyline.setStyle({ color: '#eab308', opacity: 0.9, weight: 5 });
+                this.map.removeLayer(r.polyline);
             }
         });
 
-        // Highlight selected route (brighter yellow)
-        if (route.polyline) {
-            route.polyline.setStyle({ color: '#facc15', opacity: 1, weight: 6 });
-            this.map.fitBounds(route.polyline.getBounds());
-        } else if (route.points.length > 0) {
-            // Recreate polyline if needed
-            route.polyline = L.polyline(route.points, {
-                color: '#facc15',
-                weight: 6,
-                opacity: 1
-            }).addTo(this.map);
+        // Show only the selected route
+        if (route.points && route.points.length > 0) {
+            // Recreate polyline if needed or if it was removed
+            if (!route.polyline || !this.map.hasLayer(route.polyline)) {
+                route.polyline = L.polyline(route.points, {
+                    color: '#facc15', // Bright yellow for selected route
+                    weight: 6,
+                    opacity: 1
+                }).addTo(this.map);
+            } else {
+                // Update style if polyline exists
+                route.polyline.setStyle({ color: '#facc15', opacity: 1, weight: 6 });
+            }
             this.map.fitBounds(route.polyline.getBounds());
         }
 
+        this.renderRoutesList();
         document.getElementById('sidebar').classList.add('sidebar-hidden');
+    }
+
+    // Show all routes on map
+    showAllRoutes() {
+        // Remove all routes from map first
+        this.routes.forEach(r => {
+            if (r.polyline) {
+                this.map.removeLayer(r.polyline);
+            }
+        });
+
+        // Add all routes back to map
+        this.routes.forEach(route => {
+            if (route.points && route.points.length > 0) {
+                if (!route.polyline) {
+                    route.polyline = L.polyline(route.points, {
+                        color: '#eab308', // Yellow color
+                        weight: 5,
+                        opacity: 0.9
+                    }).addTo(this.map);
+                } else {
+                    route.polyline.setStyle({ color: '#eab308', opacity: 0.9, weight: 5 });
+                    route.polyline.addTo(this.map);
+                }
+            }
+        });
+    }
+
+    // Show confirmation dialog
+    async showConfirmDialog(message, title = 'Confirm Action') {
+        return new Promise((resolve) => {
+            const overlay = document.getElementById('confirm-dialog-overlay');
+            const messageEl = document.getElementById('confirm-dialog-message');
+            const titleEl = document.getElementById('confirm-dialog-title');
+            const confirmBtn = document.getElementById('confirm-dialog-confirm');
+            const cancelBtn = document.getElementById('confirm-dialog-cancel');
+
+            // Set content
+            titleEl.textContent = title;
+            messageEl.textContent = message;
+
+            // Show dialog - remove aria-hidden attribute entirely when visible
+            overlay.classList.remove('hidden');
+            overlay.removeAttribute('aria-hidden');
+            
+            // Focus after DOM update to avoid aria-hidden conflict
+            requestAnimationFrame(() => {
+                confirmBtn.focus();
+            });
+
+            // Handle confirm
+            const handleConfirm = () => {
+                cleanup();
+                resolve(true);
+            };
+
+            // Handle cancel
+            const handleCancel = () => {
+                cleanup();
+                resolve(false);
+            };
+
+            // Handle escape key
+            const handleEscape = (e) => {
+                if (e.key === 'Escape') {
+                    handleCancel();
+                }
+            };
+
+            // Cleanup function
+            const cleanup = () => {
+                overlay.classList.add('hidden');
+                overlay.setAttribute('aria-hidden', 'true');
+                // Remove focus from button before hiding
+                confirmBtn.blur();
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
+                document.removeEventListener('keydown', handleEscape);
+                overlay.removeEventListener('click', handleOverlayClick);
+            };
+
+            // Handle overlay click (close on backdrop)
+            const handleOverlayClick = (e) => {
+                if (e.target === overlay) {
+                    handleCancel();
+                }
+            };
+
+            confirmBtn.addEventListener('click', handleConfirm);
+            cancelBtn.addEventListener('click', handleCancel);
+            document.addEventListener('keydown', handleEscape);
+            overlay.addEventListener('click', handleOverlayClick);
+        });
     }
 
     // Delete route
     async deleteRoute(routeId) {
-        if (!confirm('Delete this route?')) return;
+        const confirmed = await this.showConfirmDialog('Are you sure you want to delete this route?', 'Delete Route');
+        if (!confirmed) return;
 
         const route = this.routes.find(r => r.id === routeId);
         if (route && route.polyline) {
             this.map.removeLayer(route.polyline);
         }
 
+        // If deleting the selected route, clear selection
+        if (this.selectedRouteId === routeId) {
+            this.selectedRouteId = null;
+        }
+
         this.routes = this.routes.filter(r => r.id !== routeId);
         await this.db.delete('routes', routeId);
+        
+        // If we had a route selected and deleted it, show all remaining routes
+        if (this.selectedRouteId === null && this.routes.length > 0) {
+            this.showAllRoutes();
+        }
+        
         this.renderRoutesList();
         this.showToast('Route deleted', 'success');
     }
@@ -807,17 +1239,19 @@ class TrailTrack {
                     created: new Date().toISOString()
                 };
 
-                // Draw route on map (yellow color)
-                route.polyline = L.polyline(points, {
-                    color: '#eab308', // Yellow color
-                    weight: 5,
-                    opacity: 0.9
-                }).addTo(this.map);
-                this.map.fitBounds(route.polyline.getBounds());
-
                 // Save route
                 await this.saveRoute(route);
                 this.routes.push(route);
+                
+                // Clear any route selection and show all routes (including the new one)
+                this.selectedRouteId = null;
+                this.showAllRoutes();
+                
+                // Fit bounds to the newly imported route
+                if (route.polyline) {
+                    this.map.fitBounds(route.polyline.getBounds());
+                }
+                
                 this.renderRoutesList();
                 
                 this.showToast('GPX imported successfully', 'success');

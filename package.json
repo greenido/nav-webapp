@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "TrailTrack - Web-Based Hiking & Cycling Routes App",
   "scripts": {
+    "start": "npx serve index.html",
     "test": "jest"
   },
   "devDependencies": {
