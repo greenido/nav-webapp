@@ -592,6 +592,10 @@ class TrailTrack {
             name: 'New Route',
             points: [],
             polyline: null,
+            markers: [],
+            kmMarkers: [],
+            cumulativeDistances: [],
+            distance: 0,
             created: new Date().toISOString()
         };
 
@@ -629,6 +633,10 @@ class TrailTrack {
             routeNameInput.addEventListener('input', this.handleRouteNameInput);
         }
         
+        this.updateRouteDistanceDisplay(0);
+        this.updateRouteStatusMessage(0);
+        this.updateKilometerMarkers(0);
+
         this.showToast('Click on map or enable GPS tracking to create route', 'info');
         
         // Add click handler to map
@@ -655,6 +663,22 @@ class TrailTrack {
         }
         
         this.currentRoute.points.push(point);
+        if (!this.currentRoute.cumulativeDistances) {
+            this.currentRoute.cumulativeDistances = [];
+        }
+
+        const pointsLength = this.currentRoute.points.length;
+        if (pointsLength === 1) {
+            this.currentRoute.cumulativeDistances = [0];
+            this.currentRoute.distance = 0;
+        } else if (pointsLength > 1) {
+            const previousPoint = this.currentRoute.points[pointsLength - 2];
+            const segmentDistance = this.calculateSegmentDistance(previousPoint, point);
+            const lastDistance = this.currentRoute.cumulativeDistances[this.currentRoute.cumulativeDistances.length - 1] || 0;
+            const cumulativeDistance = lastDistance + segmentDistance;
+            this.currentRoute.cumulativeDistances.push(cumulativeDistance);
+            this.currentRoute.distance = cumulativeDistance;
+        }
         
         // Convert to Leaflet LatLng for polyline if needed
         const leafletLatLng = Array.isArray(latlng) ? L.latLng(latlng[0], latlng[1]) : latlng;
@@ -683,6 +707,10 @@ class TrailTrack {
             this.currentRoute.markers = [];
         }
         this.currentRoute.markers.push(marker);
+
+        this.updateRouteDistanceDisplay(this.currentRoute.distance || 0);
+        this.updateRouteStatusMessage(this.currentRoute.distance || 0);
+        this.updateKilometerMarkers(this.currentRoute.distance || 0);
         
         // Update undo button state
         this.updateUndoButtonState();
@@ -695,6 +723,9 @@ class TrailTrack {
 
         // Remove last point
         this.currentRoute.points.pop();
+        if (this.currentRoute.cumulativeDistances && this.currentRoute.cumulativeDistances.length > 0) {
+            this.currentRoute.cumulativeDistances.pop();
+        }
 
         // Remove last marker
         if (this.currentRoute.markers && this.currentRoute.markers.length > 0) {
@@ -714,6 +745,19 @@ class TrailTrack {
                 this.currentRoute.polyline.setLatLngs(latlngs);
             }
         }
+
+        if (this.currentRoute.cumulativeDistances && this.currentRoute.cumulativeDistances.length > 0) {
+            this.currentRoute.distance = this.currentRoute.cumulativeDistances[this.currentRoute.cumulativeDistances.length - 1];
+        } else {
+            this.currentRoute.distance = 0;
+            if (this.currentRoute.cumulativeDistances) {
+                this.currentRoute.cumulativeDistances = [];
+            }
+        }
+
+        this.updateRouteDistanceDisplay(this.currentRoute.distance);
+        this.updateRouteStatusMessage(this.currentRoute.distance);
+        this.updateKilometerMarkers(this.currentRoute.distance);
 
         // Update undo button state
         this.updateUndoButtonState();
@@ -746,8 +790,13 @@ class TrailTrack {
         }
 
         // Calculate route stats
-        this.currentRoute.distance = this.calculateDistance(this.currentRoute.points);
+        const totalDistance = this.rebuildCumulativeDistances(this.currentRoute);
+        this.currentRoute.distance = totalDistance;
         this.currentRoute.elevationGain = 0; // Would need elevation data
+        
+        this.updateRouteDistanceDisplay(totalDistance);
+        this.updateRouteStatusMessage(totalDistance);
+        this.updateKilometerMarkers(totalDistance);
         
         // Save route
         await this.saveRoute(this.currentRoute);
@@ -786,6 +835,13 @@ class TrailTrack {
         if (this.currentRoute.markers) {
             this.currentRoute.markers.forEach(m => this.map.removeLayer(m));
             this.currentRoute.markers = null; // Clear markers array
+        }
+        if (this.currentRoute.kmMarkers) {
+            this.clearKilometerMarkers(this.currentRoute);
+            this.currentRoute.kmMarkers = null;
+        }
+        if (this.currentRoute.cumulativeDistances) {
+            this.currentRoute.cumulativeDistances = null;
         }
         
         // Clear currentRoute but polyline stays on map
@@ -834,6 +890,12 @@ class TrailTrack {
             if (this.currentRoute.markers) {
                 this.currentRoute.markers.forEach(m => this.map.removeLayer(m));
             }
+            if (this.currentRoute.kmMarkers) {
+                this.clearKilometerMarkers(this.currentRoute);
+            }
+            if (this.currentRoute.cumulativeDistances) {
+                this.currentRoute.cumulativeDistances = null;
+            }
             this.currentRoute = null;
         }
         
@@ -847,6 +909,21 @@ class TrailTrack {
             return 0;
         }
 
+        let distance = 0;
+        for (let i = 1; i < points.length; i++) {
+            distance += this.calculateSegmentDistance(points[i - 1], points[i]);
+        }
+        return distance;
+    }
+
+    calculateSegmentDistance(startPoint, endPoint) {
+        const start = TrailTrack.normalizeLatLng(startPoint);
+        const end = TrailTrack.normalizeLatLng(endPoint);
+
+        if (!start || !end) {
+            return 0;
+        }
+
         const canUseLeaflet = Boolean(
             this.map &&
             typeof this.map.distance === 'function' &&
@@ -854,8 +931,207 @@ class TrailTrack {
             typeof L.latLng === 'function'
         );
 
-        let distance = 0;
-        for (let i = 1; i < points.length; i++) {
+        if (canUseLeaflet) {
+            return this.map.distance(
+                L.latLng(start.lat, start.lng),
+                L.latLng(end.lat, end.lng)
+            );
+        }
+
+        return TrailTrack.haversineDistance(start, end);
+    }
+
+    rebuildCumulativeDistances(route) {
+        if (!route) {
+            return 0;
+        }
+
+        const points = Array.isArray(route.points) ? route.points : [];
+
+        if (points.length === 0) {
+            route.cumulativeDistances = [];
+            route.distance = 0;
+            return 0;
+        }
+
+        const cumulativeDistances = [];
+        let total = 0;
+
+        for (let i = 0; i < points.length; i++) {
+            if (i === 0) {
+                cumulativeDistances.push(0);
+                continue;
+            }
+
+            total += this.calculateSegmentDistance(points[i - 1], points[i]);
+            cumulativeDistances.push(total);
+        }
+
+        route.cumulativeDistances = cumulativeDistances;
+        route.distance = total;
+        return total;
+    }
+
+    updateRouteDistanceDisplay(distanceMeters = 0) {
+        const distanceDisplay = document.getElementById('route-distance-display');
+        if (!distanceDisplay) {
+            return;
+        }
+
+        distanceDisplay.textContent = TrailTrack.formatDistance(distanceMeters);
+    }
+
+    updateRouteStatusMessage(distanceMeters = 0) {
+        const statusElements = [
+            document.getElementById('route-status'),
+            document.getElementById('route-status-inline')
+        ];
+
+        const hasRoute = this.currentRoute && Array.isArray(this.currentRoute.points);
+        const pointsCount = hasRoute ? this.currentRoute.points.length : 0;
+        const hasActiveRoute = this.isDrawingRoute && hasRoute;
+
+        let message;
+        if (hasActiveRoute && pointsCount >= 2) {
+            message = `Distance: ${TrailTrack.formatDistance(distanceMeters)}`;
+        } else if (hasActiveRoute) {
+            message = 'Add at least two points to measure distance';
+        } else if (hasRoute && pointsCount >= 2) {
+            message = `Distance: ${TrailTrack.formatDistance(distanceMeters)}`;
+        } else if (this.isDrawingRoute) {
+            message = 'Add at least two points to measure distance';
+        } else {
+            message = 'Ready to draw a route';
+        }
+
+        statusElements.forEach((element) => {
+            if (element) {
+                element.textContent = message;
+            }
+        });
+    }
+
+    updateKilometerMarkers(totalDistance = 0) {
+        if (!this.map || !this.currentRoute) {
+            return;
+        }
+
+        if (!Array.isArray(this.currentRoute.kmMarkers)) {
+            this.currentRoute.kmMarkers = [];
+        }
+
+        const points = Array.isArray(this.currentRoute.points) ? this.currentRoute.points : [];
+        if (points.length < 2 || totalDistance < 1000) {
+            this.clearKilometerMarkers(this.currentRoute);
+            return;
+        }
+
+        const kmCount = Math.floor(totalDistance / 1000);
+
+        // Remove markers that are no longer needed (e.g., after undo)
+        while (this.currentRoute.kmMarkers.length > kmCount) {
+            const marker = this.currentRoute.kmMarkers.pop();
+            if (marker) {
+                this.map.removeLayer(marker);
+            }
+        }
+
+        // Add new markers for each full kilometer reached
+        for (let km = this.currentRoute.kmMarkers.length + 1; km <= kmCount; km++) {
+            const markerDistance = km * 1000;
+            const markerLatLng = this.getLatLngAtDistance(
+                points,
+                markerDistance,
+                this.currentRoute.cumulativeDistances
+            );
+
+            if (!markerLatLng) {
+                break;
+            }
+
+            const marker = L.circleMarker(markerLatLng, {
+                radius: 6,
+                color: '#1d4ed8',
+                weight: 2,
+                fillColor: '#60a5fa',
+                fillOpacity: 0.9,
+                interactive: false
+            }).addTo(this.map);
+
+            marker.bindTooltip(`${km} km`, {
+                permanent: true,
+                direction: 'top',
+                offset: [0, -10],
+                opacity: 0.9
+            });
+
+            this.currentRoute.kmMarkers.push(marker);
+        }
+    }
+
+    clearKilometerMarkers(route) {
+        if (!route || !Array.isArray(route.kmMarkers)) {
+            return;
+        }
+
+        if (this.map) {
+            route.kmMarkers.forEach((marker) => {
+                if (marker) {
+                    this.map.removeLayer(marker);
+                }
+            });
+        }
+
+        route.kmMarkers = [];
+    }
+
+    getLatLngAtDistance(points, targetDistance, cumulativeDistances = []) {
+        if (!Array.isArray(points) || points.length < 2) {
+            return null;
+        }
+
+        if (typeof L === 'undefined' || typeof L.latLng !== 'function') {
+            return null;
+        }
+
+        const hasCumulative = Array.isArray(cumulativeDistances) && cumulativeDistances.length === points.length;
+
+        if (!hasCumulative) {
+            // Fallback: calculate cumulative distances on the fly
+            let accumulated = 0;
+            for (let i = 1; i < points.length; i++) {
+                const segmentDistance = this.calculateSegmentDistance(points[i - 1], points[i]);
+                if (accumulated + segmentDistance >= targetDistance) {
+                    const ratio = segmentDistance === 0 ? 0 : (targetDistance - accumulated) / segmentDistance;
+                    const start = TrailTrack.normalizeLatLng(points[i - 1]);
+                    const end = TrailTrack.normalizeLatLng(points[i]);
+                    if (!start || !end) {
+                        return null;
+                    }
+                    return L.latLng(
+                        start.lat + (end.lat - start.lat) * ratio,
+                        start.lng + (end.lng - start.lng) * ratio
+                    );
+                }
+                accumulated += segmentDistance;
+            }
+            const last = TrailTrack.normalizeLatLng(points[points.length - 1]);
+            return last ? L.latLng(last.lat, last.lng) : null;
+        }
+
+        if (targetDistance <= 0) {
+            const first = TrailTrack.normalizeLatLng(points[0]);
+            return first ? L.latLng(first.lat, first.lng) : null;
+        }
+
+        for (let i = 1; i < cumulativeDistances.length; i++) {
+            if (cumulativeDistances[i] < targetDistance) {
+                continue;
+            }
+
+            const segmentStartDistance = cumulativeDistances[i - 1];
+            const segmentEndDistance = cumulativeDistances[i];
+            const segmentDistance = segmentEndDistance - segmentStartDistance;
             const start = TrailTrack.normalizeLatLng(points[i - 1]);
             const end = TrailTrack.normalizeLatLng(points[i]);
 
@@ -863,16 +1139,19 @@ class TrailTrack {
                 continue;
             }
 
-            if (canUseLeaflet) {
-                distance += this.map.distance(
-                    L.latLng(start.lat, start.lng),
-                    L.latLng(end.lat, end.lng)
-                );
-            } else {
-                distance += TrailTrack.haversineDistance(start, end);
+            if (segmentDistance === 0) {
+                return L.latLng(end.lat, end.lng);
             }
+
+            const ratio = (targetDistance - segmentStartDistance) / segmentDistance;
+            return L.latLng(
+                start.lat + (end.lat - start.lat) * ratio,
+                start.lng + (end.lng - start.lng) * ratio
+            );
         }
-        return distance;
+
+        const lastPoint = TrailTrack.normalizeLatLng(points[points.length - 1]);
+        return lastPoint ? L.latLng(lastPoint.lat, lastPoint.lng) : null;
     }
 
     static normalizeLatLng(point) {
@@ -907,6 +1186,12 @@ class TrailTrack {
             Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c;
+    }
+
+    static formatDistance(distanceMeters) {
+        const numericDistance = Number(distanceMeters);
+        const sanitizedDistance = Number.isFinite(numericDistance) ? Math.max(numericDistance, 0) : 0;
+        return `${(sanitizedDistance / 1000).toFixed(2)} km`;
     }
 
     // Save route to IndexedDB
@@ -1006,7 +1291,7 @@ class TrailTrack {
                     <div class="flex-1" data-route-id="${route.id}">
                         <h3 class="font-semibold dark:text-white">${route.name}${isSelected ? ' <span class="text-green-600 dark:text-green-400">(Selected)</span>' : ''}</h3>
                         <p class="text-sm text-gray-600 dark:text-gray-300">
-                            ${(route.distance / 1000).toFixed(2)} km
+                            ${TrailTrack.formatDistance(route.distance)}
                         </p>
                         <p class="text-xs text-gray-500 dark:text-gray-400">
                             ${new Date(route.created).toLocaleDateString()}
