@@ -1,0 +1,13 @@
+{
+  "name": "nav-app",
+  "version": "1.0.0",
+  "description": "TrailTrack - Web-Based Hiking & Cycling Routes App",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
+  }
+}
+

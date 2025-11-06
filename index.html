@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="TrailTrack - Discover, create, and navigate hiking & cycling routes">
+    <meta name="theme-color" content="#10b981">
+    <title>TrailTrack - Hiking & Cycling Routes</title>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- Theme Bootstrap -->
+    <script>
+        try {
+            const storedTheme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (storedTheme === 'dark' || (!storedTheme && prefersDark)) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        } catch (error) {
+            // Ignore theme bootstrap errors (e.g., localStorage disabled)
+        }
+    </script>
+
+    <!-- Tailwind Configuration -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class'
+        };
+    </script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- GPX Parser -->
+    <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
+    <script src="https://unpkg.com/togpx@0.5.0/togpx.js"></script>
+    
+    <!-- idb wrapper for IndexedDB -->
+    <script src="https://unpkg.com/idb@7/build/umd.js"></script>
+    
+    <style>
+        #map { height: 100vh; width: 100%; }
+        .leaflet-container { z-index: 1; }
+        .route-marker { cursor: pointer; }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 10000;
+            min-width: 250px;
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        @keyframes pulse {
+            0% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(2);
+                opacity: 0;
+            }
+        }
+        .sidebar {
+            transition: transform 0.3s ease-in-out;
+        }
+        .sidebar-hidden {
+            transform: translateX(-100%);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900">
+    <!-- Header -->
+    <header class="bg-white dark:bg-gray-800 shadow-md fixed top-0 left-0 right-0 z-50">
+        <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+            <h1 class="text-2xl font-bold text-green-600 dark:text-green-400">TrailTrack</h1>
+            <div class="flex items-center gap-2">
+                <button id="theme-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Toggle light or dark theme" aria-label="Toggle light or dark theme">
+                    <svg id="sun-icon" class="w-6 h-6 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                    </svg>
+                    <svg id="moon-icon" class="w-6 h-6 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                    </svg>
+                </button>
+                <button id="routes-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Show routes sidebar" aria-label="Show routes sidebar">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                    </svg>
+                </button>
+                <button id="help-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Open help and tips" aria-label="Open help and tips">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8.227 9a4 4 0 117.546 0c0 2-2 3-3.773 3v1m0 5a9 9 0 119-9 9 9 0 01-9 9z"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="pt-16">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar fixed top-16 left-0 h-[calc(100vh-4rem)] w-80 bg-white dark:bg-gray-800 shadow-lg z-40 overflow-y-auto sidebar-hidden">
+            <div class="p-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-semibold dark:text-white">Routes</h2>
+                    <button id="close-sidebar" class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Hide routes sidebar" aria-label="Hide routes sidebar">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                
+                <!-- Route Actions -->
+                <div class="space-y-2 mb-4">
+                    <button id="create-route-btn" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg font-medium" title="Start drawing a new route" aria-label="Start drawing a new route">
+                        Create New Route
+                    </button>
+                    <label class="block">
+                        <input type="file" id="gpx-import" accept=".gpx" class="hidden">
+                        <span class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg font-medium cursor-pointer block text-center" title="Import a GPX file" aria-label="Import a GPX file">
+                            Import GPX
+                        </span>
+                    </label>
+                </div>
+
+                <!-- Routes Search -->
+                <div class="relative mb-4" role="search">
+                    <input
+                        id="routes-search"
+                        type="search"
+                        placeholder="Search routes..."
+                        class="w-full rounded-lg border border-gray-200 bg-white py-2 pl-10 pr-3 text-sm text-gray-700 placeholder:text-gray-400 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-green-400"
+                        aria-label="Search saved routes"
+                    >
+                    <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M18 10.5a7.5 7.5 0 11-15 0 7.5 7.5 0 0115 0z"></path>
+                    </svg>
+                </div>
+
+                <!-- Routes List -->
+                <div id="routes-list" class="space-y-2">
+                    <!-- Routes will be dynamically inserted here -->
+                </div>
+            </div>
+        </aside>
+
+        <!-- Map Container -->
+        <div id="map" class="relative">
+            <!-- Map Controls Overlay -->
+            <div class="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
+                <button id="center-location" class="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700" title="Center on location">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                </button>
+                <button id="toggle-tracking" class="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700" title="Toggle GPS tracking">
+                    <svg id="tracking-icon" class="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </button>
+                <button id="download-area" class="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700" title="Download area for offline">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Route Creation Controls -->
+            <div id="route-controls" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg hidden">
+                <div class="flex items-center gap-4">
+                    <span id="route-status" class="text-sm font-medium dark:text-white">Drawing route...</span>
+                    <button id="finish-route" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg" title="Save the current route" aria-label="Save the current route">
+                        Finish
+                    </button>
+                    <button id="cancel-route" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg" title="Cancel route creation" aria-label="Cancel route creation">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Help Overlay -->
+    <div id="help-overlay" class="hidden fixed inset-0 z-[1100] bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="help-title" aria-hidden="true">
+        <div id="help-content" class="relative w-full max-w-2xl bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 space-y-4 focus:outline-none" tabindex="-1">
+            <button id="help-close" class="absolute top-3 right-3 p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Close help" aria-label="Close help">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+            <div class="flex items-center gap-3">
+                <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" title="TrailTrack help badge" aria-label="TrailTrack help badge">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8.227 9a4 4 0 117.546 0c0 2-2 3-3.773 3v1m0 5a9 9 0 119-9 9 9 0 01-9 9z"></path>
+                    </svg>
+                </span>
+                <div>
+                    <h2 id="help-title" class="text-2xl font-semibold text-gray-900 dark:text-white">Help & Tips</h2>
+                    <p class="text-sm text-gray-600 dark:text-gray-300">Quick guidance for navigating TrailTrack and managing your routes.</p>
+                </div>
+            </div>
+            <div class="space-y-3 text-sm text-gray-700 dark:text-gray-200">
+                <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3" title="Creating new routes guidance" aria-label="Creating new routes guidance">
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Creating Routes</h3>
+                    <p>Use <strong>Create New Route</strong> to start drawing on the map or enable GPS tracking to record your path automatically.</p>
+                </div>
+                <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3" title="Managing routes guidance" aria-label="Managing routes guidance">
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Managing Routes</h3>
+                    <p>In the routes sidebar, view details, export GPX files, or remove routes using the action buttons next to each saved route.</p>
+                </div>
+                <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3" title="Offline usage guidance" aria-label="Offline usage guidance">
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Offline Use</h3>
+                    <p>Navigate to your desired area and select <strong>Download area for offline</strong> to cache map tiles before you lose connection.</p>
+                </div>
+                <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3" title="Support information" aria-label="Support information">
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Need Support?</h3>
+                    <p>Check the README for setup instructions or share feedback with your team to help improve TrailTrack.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- App Script -->
+    <script src="app.js"></script>
+    
+    <!-- Service Worker Registration -->
+    <script>
+        // Check for debug mode (via URL parameter ?debug=1 or localStorage)
+        const urlParams = new URLSearchParams(window.location.search);
+        const debugMode = urlParams.get('debug') === '1' || localStorage.getItem('sw-debug') === 'true';
+        
+        if (!debugMode && 'serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => console.log('Service Worker registered'))
+                    .catch(err => console.log('Service Worker registration failed:', err));
+            });
+        } else if (debugMode) {
+            console.log('Service Worker disabled (debug mode)');
+            // Unregister any existing service workers
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(registrations => {
+                    registrations.forEach(reg => reg.unregister());
+                });
+            }
+        }
+    </script>
+</body>
+</html>
+
