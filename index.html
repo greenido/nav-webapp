@@ -5,8 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="TrailTrack - Discover, create, and navigate hiking & cycling routes">
     <meta name="theme-color" content="#10b981">
+    <meta name="application-name" content="TrailTrack">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="TrailTrack">
     <title>TrailTrack - Hiking & Cycling Routes</title>
     
+    <!-- App Icons -->
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+    <link rel="icon" type="image/png" sizes="64x64" href="icon-64.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <!-- PWA Manifest -->
     <link rel="manifest" href="manifest.json">
     
@@ -119,6 +131,12 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"></path>
                     </svg>
                 </button>
+                <button id="install-app-button" class="hidden flex items-center gap-2 rounded-lg bg-green-600 hover:bg-green-700 active:bg-green-800 text-white text-sm font-medium px-3 py-2 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-800" title="Install TrailTrack" aria-label="Install TrailTrack">
+                    <svg class="w-4.5 h-4.5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v12m0 0l-4-4m4 4l4-4M5 19h14" />
+                    </svg>
+                    <span class="hidden sm:inline">Install</span>
+                </button>
             </div>
         </div>
     </header>
@@ -217,7 +235,7 @@
             </div>
 
             <!-- Route Creation Controls - Mobile First -->
-            <div id="route-controls" class="absolute bottom-[max(env(safe-area-inset-bottom,1rem),1rem)] md:bottom-4 left-1/2 -translate-x-1/2 z-[10000] bg-white dark:bg-gray-800 p-4 md:p-4 rounded-lg shadow-lg hidden w-full max-w-[calc(100%-1rem)] md:max-w-[500px]">
+            <div id="route-controls" class="absolute top-[calc(env(safe-area-inset-top,0)+0.75rem)] md:top-auto md:bottom-4 left-1/2 -translate-x-1/2 z-[10000] bg-white dark:bg-gray-800 p-3 md:p-4 rounded-xl shadow-lg hidden w-[min(92vw,20rem)] md:w-full md:max-w-[500px]">
                 <div class="flex flex-col gap-3">
                     <div class="flex flex-col md:flex-row md:items-center gap-2 md:gap-2">
                         <label for="route-name-input" class="text-sm md:text-sm font-medium dark:text-white whitespace-nowrap">Route Name:</label>

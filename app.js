@@ -21,6 +21,8 @@ class TrailTrack {
         this.batterySaveMode = localStorage.getItem('batterySaveMode') === 'true';
         this.gpsCheckInterval = parseInt(localStorage.getItem('gpsCheckInterval') || '5000', 10); // Default 5 seconds
         this.gpsIntervalTimer = null;
+        this.deferredInstallPrompt = null;
+        this.installButton = null;
         
         if (this.options.autoInit) {
             this.init();
@@ -397,14 +399,18 @@ class TrailTrack {
         });
 
         // Create route
-        document.getElementById('create-route-btn').addEventListener('click', () => {
+        document.getElementById('create-route-btn').addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
             this.startRouteCreation();
         });
 
         // Mobile floating action button for route creation
         const mobileFab = document.getElementById('mobile-create-route-fab');
         if (mobileFab) {
-            mobileFab.addEventListener('click', () => {
+            mobileFab.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
                 this.startRouteCreation();
             });
         }
@@ -469,6 +475,8 @@ class TrailTrack {
                 this.updateGpsCheckInterval(seconds * 1000);
             });
         }
+
+        this.initInstallPromptExperience();
     }
 
     // Toggle GPS Tracking
@@ -1395,6 +1403,126 @@ class TrailTrack {
     checkOnlineStatus() {
         const status = navigator.onLine ? 'online' : 'offline';
         // Could add visual indicator here
+    }
+
+    initInstallPromptExperience() {
+        if (typeof window === 'undefined' || typeof document === 'undefined') {
+            return;
+        }
+
+        const installButton = document.getElementById('install-app-button');
+        if (!installButton) {
+            return;
+        }
+
+        this.installButton = installButton;
+
+        const showButton = () => {
+            installButton.classList.remove('hidden');
+        };
+
+        const hideButton = () => {
+            installButton.classList.add('hidden');
+        };
+
+        if (this.isStandaloneMode()) {
+            hideButton();
+        }
+
+        window.addEventListener('beforeinstallprompt', (event) => {
+            event.preventDefault();
+            this.deferredInstallPrompt = event;
+            showButton();
+        });
+
+        installButton.addEventListener('click', async () => {
+            if (this.deferredInstallPrompt) {
+                const promptEvent = this.deferredInstallPrompt;
+                this.deferredInstallPrompt = null;
+                try {
+                    await promptEvent.prompt();
+                    const choiceResult = await promptEvent.userChoice;
+                    if (choiceResult && choiceResult.outcome === 'accepted') {
+                        this.showToast('TrailTrack installed! Launch it from your home screen.', 'success');
+                    } else {
+                        this.showToast('Install dismissed. You can still add TrailTrack from your browser menu.', 'info');
+                    }
+                } catch (error) {
+                    console.error('Install prompt failed', error);
+                    this.showToast('Unable to show install prompt right now. Please try again later.', 'error');
+                }
+                hideButton();
+            } else if (this.isIOS() && !this.isStandaloneMode()) {
+                this.showInstallInstructions();
+            } else {
+                this.showToast('Install is not available on this device yet.', 'warning');
+            }
+        });
+
+        window.addEventListener('appinstalled', () => {
+            this.deferredInstallPrompt = null;
+            hideButton();
+            this.showToast('TrailTrack installed! Launch it from your home screen.', 'success');
+        });
+
+        const displayModeQuery = window.matchMedia('(display-mode: standalone)');
+        const handleDisplayModeChange = (event) => {
+            if (event.matches) {
+                hideButton();
+            }
+        };
+
+        if (displayModeQuery) {
+            if (typeof displayModeQuery.addEventListener === 'function') {
+                displayModeQuery.addEventListener('change', handleDisplayModeChange);
+            } else if (typeof displayModeQuery.addListener === 'function') {
+                displayModeQuery.addListener(handleDisplayModeChange);
+            }
+        }
+
+        if (this.isIOS() && !this.isStandaloneMode()) {
+            showButton();
+        }
+    }
+
+    isStandaloneMode() {
+        if (typeof window === 'undefined') {
+            return false;
+        }
+
+        const isStandaloneDisplay = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+        const isIOSStandalone = typeof window.navigator !== 'undefined' && window.navigator.standalone === true;
+        return isStandaloneDisplay || isIOSStandalone;
+    }
+
+    isIOS() {
+        if (typeof navigator === 'undefined') {
+            return false;
+        }
+
+        const hasWindow = typeof window !== 'undefined';
+        const userAgent = navigator.userAgent || navigator.vendor || (hasWindow ? window.opera : '');
+        if (!userAgent) {
+            return false;
+        }
+
+        const lowerUA = userAgent.toLowerCase();
+        const isAppleMobile = /iphone|ipad|ipod/.test(lowerUA);
+        const hasMsStream = hasWindow && typeof window.MSStream !== 'undefined';
+        return isAppleMobile && !hasMsStream;
+    }
+
+    showInstallInstructions() {
+        if (typeof navigator === 'undefined') {
+            return;
+        }
+
+        const isiPad = navigator.userAgent && navigator.userAgent.toLowerCase().includes('ipad');
+        const instruction = isiPad
+            ? 'Tap the share icon (square with an arrow) in Safari, then choose “Add to Home Screen”.'
+            : 'Tap the share icon in Safari, scroll, and choose “Add to Home Screen”.';
+
+        this.showToast(`To install TrailTrack, ${instruction}`, 'info');
     }
 
     // Toast notifications

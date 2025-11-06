@@ -1,6 +1,6 @@
 // TrailTrack Service Worker for Offline Support
 
-const CACHE_NAME = 'trailtrack-v1';
+const CACHE_NAME = 'trailtrack-v2';
 const TILE_CACHE_NAME = 'trailtrack-tiles-v1';
 
 // Assets to cache on install
@@ -9,6 +9,11 @@ const STATIC_ASSETS = [
     '/index.html',
     '/app.js',
     '/manifest.json',
+    '/icon-192.png',
+    '/icon-512.png',
+    '/icon-64.png',
+    '/favicon-32.png',
+    '/favicon-16.png',
     'https://cdn.tailwindcss.com',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
