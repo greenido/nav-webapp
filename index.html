@@ -49,7 +49,20 @@
     <script src="https://unpkg.com/idb@7/build/umd.js"></script>
     
     <style>
-        #map { height: 100vh; width: 100%; }
+        /* Essential styles for Leaflet/map that can't be done with Tailwind */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            min-width: 100%;
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+        #map { 
+            height: 100vh; 
+            width: 100%; 
+            overflow: visible;
+        }
         .leaflet-container { z-index: 1; }
         .route-marker { cursor: pointer; }
         .current-location-marker {
@@ -59,14 +72,7 @@
             background: transparent !important;
             border: none !important;
         }
-        .toast {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 10000;
-            min-width: 250px;
-            animation: slideIn 0.3s ease-out;
-        }
+        /* Animation for toast notifications */
         @keyframes slideIn {
             from {
                 transform: translateX(100%);
@@ -87,35 +93,29 @@
                 opacity: 0;
             }
         }
-        .sidebar {
-            transition: transform 0.3s ease-in-out;
-        }
-        .sidebar-hidden {
-            transform: translateX(-100%);
-        }
     </style>
 </head>
-<body class="bg-gray-50 dark:bg-gray-900">
-    <!-- Header -->
-    <header class="bg-white dark:bg-gray-800 shadow-md fixed top-0 left-0 right-0 z-50">
-        <div class="container mx-auto px-4 py-3 flex items-center justify-between">
-            <h1 class="text-2xl font-bold text-green-600 dark:text-green-400">TrailTrack</h1>
-            <div class="flex items-center gap-2">
-                <button id="theme-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Toggle light or dark theme" aria-label="Toggle light or dark theme">
-                    <svg id="sun-icon" class="w-6 h-6 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<body class="bg-gray-50 dark:bg-gray-900 m-0 p-0 w-full min-w-full max-w-full overflow-x-hidden">
+    <!-- Header - Mobile First -->
+    <header class="fixed top-0 left-1/2 -translate-x-1/2 z-[10001] bg-white dark:bg-gray-800 shadow-md pt-[env(safe-area-inset-top,0)] min-h-[48px] md:min-h-[64px] w-[100vw] max-w-[100vw] overflow-x-hidden">
+        <div class="w-full px-2 py-2 md:px-4 md:py-3 flex flex-row items-center justify-between box-border overflow-x-hidden overflow-y-visible min-w-0 gap-2">
+            <h1 class="text-base md:text-2xl font-bold text-green-600 dark:text-green-400 whitespace-nowrap shrink-0 grow-0 mr-0 min-w-0 max-w-[calc(100%-140px)] overflow-hidden text-ellipsis">TrailTrack</h1>
+            <div class="flex flex-row items-center gap-0.5 md:gap-2 flex-shrink-0 flex-grow-0 overflow-visible min-w-fit">
+                <button id="theme-toggle" class="p-1.5 md:p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 min-w-[36px] min-h-[36px] w-9 h-9 md:w-auto md:h-auto flex items-center justify-center flex-shrink-0 bg-transparent border-none cursor-pointer opacity-100 visible" title="Toggle light or dark theme" aria-label="Toggle light or dark theme">
+                    <svg id="sun-icon" class="w-4.5 h-4.5 md:w-6 md:h-6 hidden dark:block block visible opacity-100 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
                     </svg>
-                    <svg id="moon-icon" class="w-6 h-6 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg id="moon-icon" class="w-4.5 h-4.5 md:w-6 md:h-6 block dark:hidden block visible opacity-100 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
                     </svg>
                 </button>
-                <button id="routes-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Show routes sidebar" aria-label="Show routes sidebar">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <button id="routes-toggle" class="p-1.5 md:p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 min-w-[36px] min-h-[36px] w-9 h-9 md:w-auto md:h-auto flex items-center justify-center flex-shrink-0 bg-transparent border-none cursor-pointer opacity-100 visible" title="Show routes sidebar" aria-label="Show routes sidebar">
+                    <svg class="w-4.5 h-4.5 md:w-6 md:h-6 block visible opacity-100 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
                     </svg>
                 </button>
-                <button id="help-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" title="Open help and tips" aria-label="Open help and tips">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <button id="help-toggle" class="p-1.5 md:p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 min-w-[36px] min-h-[36px] w-9 h-9 md:w-auto md:h-auto flex items-center justify-center flex-shrink-0 bg-transparent border-none cursor-pointer opacity-100 visible" title="Open help and tips" aria-label="Open help and tips">
+                    <svg class="w-4.5 h-4.5 md:w-6 md:h-6 block visible opacity-100 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"></path>
                     </svg>
                 </button>
@@ -123,10 +123,10 @@
         </div>
     </header>
 
-    <!-- Main Content -->
-    <main class="pt-16">
-        <!-- Sidebar -->
-        <aside id="sidebar" class="sidebar fixed top-16 left-0 h-[calc(100vh-4rem)] w-80 bg-white dark:bg-gray-800 shadow-lg z-40 overflow-y-auto sidebar-hidden">
+    <!-- Main Content - Mobile First -->
+    <main class="pt-[calc(48px+env(safe-area-inset-top,0))] md:pt-[calc(64px+env(safe-area-inset-top,0))]">
+        <!-- Sidebar - Mobile First -->
+        <aside id="sidebar" class="fixed left-0 bg-white dark:bg-gray-800 shadow-lg z-40 overflow-y-auto transition-transform duration-300 ease-in-out -translate-x-full top-[calc(48px+env(safe-area-inset-top,0))] md:top-[calc(64px+env(safe-area-inset-top,0))] h-[calc(100vh-48px-env(safe-area-inset-top,0))] md:h-[calc(100vh-64px-env(safe-area-inset-top,0))] w-full max-w-[320px] md:w-80">
             <div class="p-4">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-xl font-semibold dark:text-white">Routes</h2>
@@ -139,7 +139,7 @@
                 
                 <!-- Route Actions -->
                 <div class="space-y-2 mb-4">
-                    <button id="create-route-btn" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg font-medium" title="Start drawing a new route" aria-label="Start drawing a new route">
+                    <button id="create-route-btn" class="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg font-medium sticky bottom-0 pt-4 mt-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 md:static md:pt-2 md:mt-0 md:border-t-0 md:bg-green-600 md:dark:bg-green-600" title="Start drawing a new route" aria-label="Start drawing a new route">
                         Create New Route
                     </button>
                     <label class="block">
@@ -194,10 +194,10 @@
             </div>
         </aside>
 
-        <!-- Map Container -->
-        <div id="map" class="relative">
-            <!-- Map Controls Overlay -->
-            <div class="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
+        <!-- Map Container - Mobile First -->
+        <div id="map" class="relative h-[calc(100vh-48px-env(safe-area-inset-top,0))] md:h-[calc(100vh-64px-env(safe-area-inset-top,0))] w-full">
+            <!-- Map Controls Overlay - Mobile First -->
+            <div class="absolute top-2 right-2 md:top-4 md:right-4 z-[1000] flex flex-col gap-2">
                 <button id="center-location" class="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700" title="Center on location">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
@@ -216,40 +216,48 @@
                 </button>
             </div>
 
-            <!-- Route Creation Controls -->
-            <div id="route-controls" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg hidden">
+            <!-- Route Creation Controls - Mobile First -->
+            <div id="route-controls" class="absolute bottom-[max(env(safe-area-inset-bottom,1rem),1rem)] md:bottom-4 left-1/2 -translate-x-1/2 z-[10000] bg-white dark:bg-gray-800 p-4 md:p-4 rounded-lg shadow-lg hidden w-full max-w-[calc(100%-1rem)] md:max-w-[500px]">
                 <div class="flex flex-col gap-3">
-                    <div class="flex items-center gap-2">
-                        <label for="route-name-input" class="text-sm font-medium dark:text-white whitespace-nowrap">Route Name:</label>
+                    <div class="flex flex-col md:flex-row md:items-center gap-2 md:gap-2">
+                        <label for="route-name-input" class="text-sm md:text-sm font-medium dark:text-white whitespace-nowrap">Route Name:</label>
                         <input 
                             type="text" 
                             id="route-name-input" 
                             value="New Route"
-                            class="flex-1 rounded-lg border border-gray-200 bg-white py-1.5 px-3 text-sm text-gray-700 placeholder:text-gray-400 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-300 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-green-400"
+                            class="w-full md:flex-1 rounded-lg border border-gray-200 bg-white py-1.5 px-3 text-sm text-gray-700 placeholder:text-gray-400 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-300 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-green-400"
                             placeholder="Enter route name"
                             title="Change the name of this route"
                         >
                     </div>
-                    <div class="flex items-center gap-4">
-                        <span id="route-status" class="text-sm font-medium dark:text-white">Drawing route...</span>
-                        <button id="undo-point" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed" title="Undo last point" aria-label="Undo last point">
+                    <div id="route-status" class="block md:hidden text-sm font-medium dark:text-white text-center w-full py-1">Drawing route...</div>
+                    <div class="flex flex-wrap md:flex-nowrap items-center gap-2 md:gap-4 justify-stretch md:justify-start">
+                        <span id="route-status-inline" class="hidden md:inline text-sm font-medium dark:text-white mr-auto">Drawing route...</span>
+                        <button id="undo-point" class="flex-1 md:flex-none min-w-[calc(33.333%-0.5rem)] md:min-w-0 bg-gray-600 hover:bg-gray-700 text-white px-3 py-2.5 md:px-4 md:py-2 rounded-lg text-sm md:text-base disabled:opacity-50 disabled:cursor-not-allowed" title="Undo last point" aria-label="Undo last point">
                             Undo
                         </button>
-                        <button id="finish-route" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg" title="Save the current route" aria-label="Save the current route">
+                        <button id="finish-route" class="flex-1 md:flex-none min-w-[calc(33.333%-0.5rem)] md:min-w-0 bg-green-600 hover:bg-green-700 text-white px-3 py-2.5 md:px-4 md:py-2 rounded-lg text-sm md:text-base" title="Save the current route" aria-label="Save the current route">
                             Finish
                         </button>
-                        <button id="cancel-route" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg" title="Cancel route creation" aria-label="Cancel route creation">
+                        <button id="cancel-route" class="flex-1 md:flex-none min-w-[calc(33.333%-0.5rem)] md:min-w-0 bg-red-600 hover:bg-red-700 text-white px-3 py-2.5 md:px-4 md:py-2 rounded-lg text-sm md:text-base" title="Cancel route creation" aria-label="Cancel route creation">
                             Cancel
                         </button>
                     </div>
                 </div>
             </div>
+
+            <!-- Mobile Floating Action Button for Route Creation -->
+            <button id="mobile-create-route-fab" class="flex md:hidden fixed bottom-[max(env(safe-area-inset-bottom,1rem),1rem)] right-4 z-[9999] w-14 h-14 rounded-full bg-green-600 hover:bg-green-700 active:bg-green-800 text-white border-none shadow-lg items-center justify-center cursor-pointer transition-all duration-200 hover:scale-105 active:scale-95" title="Create New Route" aria-label="Create New Route">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+            </button>
         </div>
     </main>
 
-    <!-- Help Overlay -->
-    <div id="help-overlay" class="hidden fixed inset-0 z-[1100] bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="help-title" aria-hidden="true">
-        <div id="help-content" class="relative w-full max-w-2xl bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 space-y-4 focus:outline-none" tabindex="-1">
+    <!-- Help Overlay - Mobile First -->
+    <div id="help-overlay" class="hidden fixed inset-0 z-[1100] bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 md:px-4" role="dialog" aria-modal="true" aria-labelledby="help-title" aria-hidden="true">
+        <div id="help-content" class="relative w-full max-w-2xl bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-4 md:p-6 space-y-4 focus:outline-none" tabindex="-1">
             <button id="help-close" class="absolute top-3 right-3 p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Close help" aria-label="Close help">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <circle cx="12" cy="12" r="10" stroke-width="2" />
@@ -298,12 +306,12 @@
         </div>
     </div>
 
-    <!-- Toast Container -->
-    <div id="toast-container"></div>
+    <!-- Toast Container - Mobile First -->
+    <div id="toast-container" class="fixed bottom-5 right-5 md:bottom-5 md:right-5 z-[10000] min-w-[250px]"></div>
 
-    <!-- Confirmation Dialog -->
-    <div id="confirm-dialog-overlay" class="hidden fixed inset-0 z-[1100] bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-hidden="true">
-        <div id="confirm-dialog-content" class="relative w-full max-w-md bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 space-y-4 focus:outline-none" tabindex="-1">
+    <!-- Confirmation Dialog - Mobile First -->
+    <div id="confirm-dialog-overlay" class="hidden fixed inset-0 z-[1100] bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 md:px-4" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-hidden="true">
+        <div id="confirm-dialog-content" class="relative w-full max-w-md bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-4 md:p-6 space-y-4 focus:outline-none" tabindex="-1">
             <h3 id="confirm-dialog-title" class="text-xl font-semibold text-gray-900 dark:text-white">Confirm Action</h3>
             <p id="confirm-dialog-message" class="text-gray-700 dark:text-gray-300"></p>
             <div class="flex items-center justify-end gap-3 pt-4">

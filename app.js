@@ -314,13 +314,13 @@ class TrailTrack {
 
     // Initialize Event Listeners
     initEventListeners() {
-        // Sidebar toggle
+        // Sidebar toggle - using Tailwind classes
         document.getElementById('routes-toggle').addEventListener('click', () => {
-            document.getElementById('sidebar').classList.remove('sidebar-hidden');
+            document.getElementById('sidebar').classList.remove('-translate-x-full');
         });
         
         document.getElementById('close-sidebar').addEventListener('click', () => {
-            document.getElementById('sidebar').classList.add('sidebar-hidden');
+            document.getElementById('sidebar').classList.add('-translate-x-full');
         });
 
         const routesSearchInput = document.getElementById('routes-search');
@@ -400,6 +400,14 @@ class TrailTrack {
         document.getElementById('create-route-btn').addEventListener('click', () => {
             this.startRouteCreation();
         });
+
+        // Mobile floating action button for route creation
+        const mobileFab = document.getElementById('mobile-create-route-fab');
+        if (mobileFab) {
+            mobileFab.addEventListener('click', () => {
+                this.startRouteCreation();
+            });
+        }
 
         // Finish/Cancel route
         document.getElementById('finish-route').addEventListener('click', (e) => {
@@ -580,7 +588,13 @@ class TrailTrack {
         };
 
         document.getElementById('route-controls').classList.remove('hidden');
-        document.getElementById('sidebar').classList.add('sidebar-hidden');
+        document.getElementById('sidebar').classList.add('-translate-x-full');
+        
+        // Hide mobile FAB when route controls are shown
+        const mobileFab = document.getElementById('mobile-create-route-fab');
+        if (mobileFab) {
+            mobileFab.classList.add('hidden');
+        }
         
         // Initialize route name input
         const routeNameInput = document.getElementById('route-name-input');
@@ -738,6 +752,12 @@ class TrailTrack {
         this.isDrawingRoute = false;
         document.getElementById('route-controls').classList.add('hidden');
         
+        // Show mobile FAB again when route controls are hidden (only on mobile, below md breakpoint)
+        const mobileFab = document.getElementById('mobile-create-route-fab');
+        if (mobileFab && window.innerWidth < 768) {
+            mobileFab.classList.remove('hidden');
+        }
+        
         // Remove route name input event listeners
         if (routeNameInput) {
             if (this.handleRouteNameInput) {
@@ -774,6 +794,12 @@ class TrailTrack {
     cancelRouteCreation() {
         this.isDrawingRoute = false;
         document.getElementById('route-controls').classList.add('hidden');
+        
+        // Show mobile FAB again when route controls are hidden (only on mobile, below md breakpoint)
+        const mobileFab = document.getElementById('mobile-create-route-fab');
+        if (mobileFab && window.innerWidth < 768) {
+            mobileFab.classList.remove('hidden');
+        }
         
         // Remove route name input event listeners
         const routeNameInput = document.getElementById('route-name-input');
@@ -1073,7 +1099,7 @@ class TrailTrack {
         }
 
         this.renderRoutesList();
-        document.getElementById('sidebar').classList.add('sidebar-hidden');
+        document.getElementById('sidebar').classList.add('-translate-x-full');
     }
 
     // Show all routes on map
@@ -1374,7 +1400,7 @@ class TrailTrack {
     // Toast notifications
     showToast(message, type = 'info') {
         const toast = document.createElement('div');
-        toast.className = `toast bg-white dark:bg-gray-800 shadow-lg rounded-lg p-4 border-l-4 ${
+        toast.className = `bg-white dark:bg-gray-800 shadow-lg rounded-lg p-4 border-l-4 animate-[slideIn_0.3s_ease-out] ${
             type === 'success' ? 'border-green-500' :
             type === 'error' ? 'border-red-500' :
             type === 'warning' ? 'border-yellow-500' :
