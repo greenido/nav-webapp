@@ -251,14 +251,25 @@
     <div id="help-overlay" class="hidden fixed inset-0 z-[1100] bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center px-4" role="dialog" aria-modal="true" aria-labelledby="help-title" aria-hidden="true">
         <div id="help-content" class="relative w-full max-w-2xl bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 space-y-4 focus:outline-none" tabindex="-1">
             <button id="help-close" class="absolute top-3 right-3 p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Close help" aria-label="Close help">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" stroke-width="2" />
+                    <path d="M12 16v-4" stroke-width="2" stroke-linecap="round"/>
+                    <circle cx="12" cy="8" r="1" fill="currentColor"/>
                 </svg>
             </button>
             <div class="flex items-center gap-3">
-                <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" title="TrailTrack help badge" aria-label="TrailTrack help badge">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8.227 9a4 4 0 117.546 0c0 2-2 3-3.773 3v1m0 5a9 9 0 119-9 9 9 0 01-9 9z"></path>
+                <span class="inline-flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-lime-500 shadow-lg ring-2 ring-green-300 dark:ring-green-900/60 dark:bg-gradient-to-br dark:from-green-900 dark:to-green-700 text-white" title="TrailTrack Help" aria-label="TrailTrack Help">
+                    <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10" fill="url(#help-gradient)" />
+                        <defs>
+                            <radialGradient id="help-gradient" cx="50%" cy="45%" r="80%">
+                                <stop offset="0%" stop-color="#dcfce7"/>
+                                <stop offset="60%" stop-color="#a3e635"/>
+                                <stop offset="100%" stop-color="#16a34a"/>
+                            </radialGradient>
+                        </defs>
+                        <path d="M12 17v-2m0 0V13a3 3 0 10-3-3" stroke="#fff" />
+                        <circle cx="12" cy="18.2" r="1" fill="#fff" stroke="none"/>
                     </svg>
                 </span>
                 <div>
@@ -281,7 +292,7 @@
                 </div>
                 <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3" title="Support information" aria-label="Support information">
                     <h3 class="font-semibold text-gray-900 dark:text-white">Need Support?</h3>
-                    <p>Check the README for setup instructions or share feedback with your team to help improve TrailTrack.</p>
+                    <p>Check the README for setup instructions or share feedback with GitHub Issues to help improve TrailTrack.</p>
                 </div>
             </div>
         </div>
