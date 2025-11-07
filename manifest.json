@@ -2,7 +2,7 @@
   "name": "TrailTrack",
   "short_name": "TrailTrack",
   "description": "Discover, create, and navigate hiking & cycling routes",
-  "start_url": "/",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#10b981",
